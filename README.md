@@ -26,5 +26,3 @@ Train model on your local machine
 ```bash
 sh run.sh train_local
 ```
-
-
