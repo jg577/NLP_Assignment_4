@@ -70,7 +70,7 @@ class NMT(nn.Module):
                                hidden_size=self.hidden_size,
                                bias=True,
                                bidirectional=True)
-        self.decoder = nn.LSTMCell(input_size=embed_size,
+        self.decoder = nn.LSTMCell(input_size=embed_size+self.hidden_size,
                                    hidden_size=self.hidden_size,
                                    bias=True)
         self.h_projection = nn.Linear(in_features=2*hidden_size,
@@ -261,7 +261,7 @@ class NMT(nn.Module):
         Y = self.model_embeddings.target(target_padded)
         for t in torch.split(Y,split_size_or_sections=1,dim=0):
             y_t_s = torch.squeeze(t)
-            Ybar_t = torch.cat((y_t_s, o_prev), 0)
+            Ybar_t = torch.cat((y_t_s, o_prev), 1)
             dec_state, o_t, e_t = self.step(Ybar_t=Ybar_t,
                                             dec_state=dec_state,
                                             enc_hiddens=enc_hiddens,
@@ -325,6 +325,11 @@ class NMT(nn.Module):
         ###         https://pytorch.org/docs/stable/torch.html#torch.squeeze
 
         ### END YOUR CODE
+        dec_state = self.decoder(Ybar_t, dec_state)
+        dec_hidden, dec_cell = dec_state
+        unsqueezed_dec_hidden = torch.unsqueeze(dec_hidden, 2)
+        e_t = torch.bmm(enc_hiddens_proj, unsqueezed_dec_hidden)
+        e_t = torch.squeeze(e_t, 2)
 
         # Set e_t to -inf where enc_masks has 1
         if enc_masks is not None:
@@ -357,7 +362,13 @@ class NMT(nn.Module):
         ###         https://pytorch.org/docs/stable/torch.html#torch.cat
         ###     Tanh:
         ###         https://pytorch.org/docs/stable/torch.html#torch.tanh
-
+        alpha_t = nn.functional.softmax(e_t, dim=1)
+        unqueezed_alpha_t = torch.unsqueeze(alpha_t, 1)
+        a_t = torch.bmm(input=unqueezed_alpha_t, mat2=enc_hiddens)
+        a_t = torch.squeeze(a_t, 1) 
+        U_t = torch.cat((a_t, dec_hidden), 1)
+        V_t = self.combined_output_projection(U_t)
+        O_t = self.dropout(torch.tanh(V_t))
         ### END YOUR CODE
 
         combined_output = O_t
